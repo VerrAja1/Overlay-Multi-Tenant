@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel Admin Antrian</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="bg-zinc-950 text-white min-h-screen p-4">
+  <div id="loginBox" class="max-w-sm mx-auto mt-16 bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+    <h1 class="text-xl font-bold text-amber-400 mb-4">Login Admin (<span id="userLabel"></span>)</h1>
+    <input id="passInput" type="password" placeholder="Masukkan password admin" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+    <button onclick="login()" class="w-full bg-amber-500 text-zinc-950 font-bold py-2 rounded-lg">Masuk</button>
+  </div>
+
+  <div id="panel" class="hidden max-w-xl mx-auto space-y-6">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+      <h2 class="font-bold text-amber-400 mb-3">Tambah Antrian Manual</h2>
+      <div class="flex gap-2">
+        <input id="pName" placeholder="Nama / Nick FF" class="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+        <input id="pNote" placeholder="Catatan (misal: 10K)" class="w-32 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+        <button onclick="addQueue()" class="bg-emerald-500 text-zinc-950 font-bold px-4 rounded-lg text-sm">Tambah</button>
+      </div>
+    </div>
+
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="font-bold text-amber-400">Daftar Antrian Aktif</h2>
+        <button onclick="clearQueue()" class="text-xs bg-red-500/20 text-red-400 px-3 py-1 rounded-lg">Reset Semua</button>
+      </div>
+      <ul id="adminList" class="space-y-2 text-sm"></ul>
+    </div>
+
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3">
+      <h2 class="font-bold text-amber-400">Pengaturan Overlay & SociaBuzz</h2>
+      <input id="setTitle" placeholder="Judul Overlay" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+      <input id="setMin" type="number" placeholder="Minimal Donasi (Rp)" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+      <input id="setToken" placeholder="Webhook Token SociaBuzz" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+      <button onclick="saveSettings()" class="bg-amber-500 text-zinc-950 font-bold px-4 py-2 rounded-lg text-sm">Simpan Pengaturan</button>
+    </div>
+  </div>
+
+  <script>
+    const username = window.location.pathname.split('/').pop();
+    document.getElementById('userLabel').textContent = username;
+    let savedPass = '';
+    const socket = io();
+
+    async function login() {
+      savedPass = document.getElementById('passInput').value;
+      const res = await fetch(`/api/admin/${username}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: savedPass })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error);
+
+      document.getElementById('loginBox').classList.add('hidden');
+      document.getElementById('panel').classList.remove('hidden');
+      document.getElementById('setTitle').value = data.settings.title || '';
+      document.getElementById('setMin').value = data.settings.minAmount || 0;
+      document.getElementById('setToken').value = data.webhookToken || '';
+      renderList(data.queue);
+      socket.emit('join_room', username);
+    }
+
+    socket.on('update_queue', ({ queue }) => renderList(queue));
+
+    function renderList(queue) {
+      const el = document.getElementById('adminList');
+      if (!queue.length) {
+        el.innerHTML = '<li class="text-zinc-500 text-xs italic">Antrian kosong</li>';
+        return;
+      }
+      el.innerHTML = queue.map((q, idx) => `
+        <li class="flex justify-between items-center bg-zinc-950 border border-zinc-800 px-3 py-2 rounded-lg">
+          <span><b class="text-amber-400">#${idx + 1}</b> ${q.name} <span class="text-xs text-zinc-400">(${q.note})</span></span>
+          <button onclick="removeQueue(${idx})" class="bg-red-500 text-white text-xs px-2.5 py-1 rounded">Selesai / Hapus</button>
+        </li>
+      `).join('');
+    }
+
+    async function sendAction(payload) {
+      await fetch(`/api/admin/${username}/queue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: savedPass, ...payload })
+      });
+    }
+
+    function addQueue() {
+      const name = document.getElementById('pName').value.trim();
+      const note = document.getElementById('pNote').value.trim();
+      if (!name) return;
+      sendAction({ action: 'add', name, note });
+      document.getElementById('pName').value = '';
+      document.getElementById('pNote').value = '';
+    }
+
+    function removeQueue(index) { sendAction({ action: 'remove', index }); }
+    function clearQueue() { if (confirm('Reset semua antrian?')) sendAction({ action: 'clear' }); }
+    function saveSettings() {
+      sendAction({
+        action: 'settings',
+        webhookToken: document.getElementById('setToken').value.trim(),
+        settings: {
+          title: document.getElementById('setTitle').value.trim(),
+          minAmount: Number(document.getElementById('setMin').value) || 0
+        }
+      });
+      alert('Pengaturan tersimpan!');
+    }
+  </script>
+</body>
+</html>
