@@ -14,30 +14,52 @@
     <button onclick="login()" class="w-full bg-amber-500 text-zinc-950 font-bold py-2 rounded-lg">Masuk</button>
   </div>
 
-  <div id="panel" class="hidden max-w-xl mx-auto space-y-6">
+  <div id="panel" class="hidden max-w-xl mx-auto space-y-6 pb-12">
+    <!-- Tambah Antrian Manual -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
       <h2 class="font-bold text-amber-400 mb-3">Tambah Antrian Manual</h2>
-      <div class="flex gap-2">
-        <input id="pName" placeholder="Nama / Nick FF" class="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-        <input id="pNote" placeholder="Catatan (misal: 10K)" class="w-32 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-        <button onclick="addQueue()" class="bg-emerald-500 text-zinc-950 font-bold px-4 rounded-lg text-sm">Tambah</button>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+        <input id="pName" placeholder="Nama / Nick FF" class="bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none" />
+        <select id="pCategory" class="bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none"></select>
+        <input id="pNote" placeholder="Catatan (opsional)" class="bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none" />
       </div>
+      <button onclick="addQueue()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold py-2 rounded-lg text-sm transition">+ Tambah ke Antrian</button>
     </div>
 
+    <!-- Daftar Antrian Aktif -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
       <div class="flex justify-between items-center mb-3">
         <h2 class="font-bold text-amber-400">Daftar Antrian Aktif</h2>
-        <button onclick="clearQueue()" class="text-xs bg-red-500/20 text-red-400 px-3 py-1 rounded-lg">Reset Semua</button>
+        <button onclick="clearQueue()" class="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-1 rounded-lg">Reset Semua</button>
       </div>
       <ul id="adminList" class="space-y-2 text-sm"></ul>
     </div>
 
-    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3">
-      <h2 class="font-bold text-amber-400">Pengaturan Overlay & SociaBuzz</h2>
-      <input id="setTitle" placeholder="Judul Overlay" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-      <input id="setMin" type="number" placeholder="Minimal Donasi (Rp)" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-      <input id="setToken" placeholder="Webhook Token SociaBuzz" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-      <button onclick="saveSettings()" class="bg-amber-500 text-zinc-950 font-bold px-4 py-2 rounded-lg text-sm">Simpan Pengaturan</button>
+    <!-- Pengaturan Kategori & Minimal Donasi -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4">
+      <div>
+        <h2 class="font-bold text-amber-400">Kategori & Minimal Donasi</h2>
+        <p class="text-xs text-zinc-400">Donasi otomatis masuk ke kategori sesuai nominalnya.</p>
+      </div>
+
+      <div id="categoryList" class="space-y-2"></div>
+
+      <div class="flex gap-2 pt-1">
+        <input id="newCatName" placeholder="Nama Kategori (misal: VIP)" class="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none" />
+        <input id="newCatMin" type="number" placeholder="Min Rp (misal: 25000)" class="w-40 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none" />
+        <button onclick="addCategory()" class="bg-sky-500 hover:bg-sky-400 text-zinc-950 font-bold px-3 rounded-lg text-sm shrink-0">+ Kategori</button>
+      </div>
+
+      <hr class="border-zinc-800" />
+
+      <div class="space-y-2">
+        <label class="block text-xs text-zinc-400">Judul Overlay</label>
+        <input id="setTitle" placeholder="Judul Overlay" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none" />
+        <label class="block text-xs text-zinc-400 pt-1">Webhook Token SociaBuzz</label>
+        <input id="setToken" placeholder="Webhook Token SociaBuzz" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none" />
+      </div>
+
+      <button onclick="saveSettings()" class="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold py-2.5 rounded-lg text-sm transition">Simpan Semua Pengaturan</button>
     </div>
   </div>
 
@@ -45,6 +67,7 @@
     const username = window.location.pathname.split('/').pop();
     document.getElementById('userLabel').textContent = username;
     let savedPass = '';
+    let categories = [];
     const socket = io();
 
     async function login() {
@@ -60,13 +83,62 @@
       document.getElementById('loginBox').classList.add('hidden');
       document.getElementById('panel').classList.remove('hidden');
       document.getElementById('setTitle').value = data.settings.title || '';
-      document.getElementById('setMin').value = data.settings.minAmount || 0;
       document.getElementById('setToken').value = data.webhookToken || '';
+      categories = data.settings.categories || [];
+      renderCategories();
       renderList(data.queue);
       socket.emit('join_room', username);
     }
 
-    socket.on('update_queue', ({ queue }) => renderList(queue));
+    socket.on('update_queue', ({ queue, settings }) => {
+      renderList(queue);
+      if (settings && settings.categories) {
+        categories = settings.categories;
+        renderCategories();
+      }
+    });
+
+    function renderCategories() {
+      const catEl = document.getElementById('categoryList');
+      const selectEl = document.getElementById('pCategory');
+
+      if (!categories.length) {
+        catEl.innerHTML = '<p class="text-xs text-zinc-500 italic">Belum ada kategori. Tambahkan minimal 1 kategori.</p>';
+        selectEl.innerHTML = '<option value="Reguler">Reguler</option>';
+        return;
+      }
+
+      catEl.innerHTML = categories.map((cat, idx) => `
+        <div class="flex items-center justify-between bg-zinc-950 border border-zinc-800 px-3 py-2 rounded-lg text-sm">
+          <div>
+            <span class="font-bold text-amber-400">${cat.name}</span>
+            <span class="text-xs text-zinc-400 ml-2">Min: Rp${Number(cat.minAmount).toLocaleString('id-ID')}</span>
+          </div>
+          <button onclick="removeCategory(${idx})" class="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">Hapus</button>
+        </div>
+      `).join('');
+
+      selectEl.innerHTML = categories.map(cat => `<option value="${cat.name}">${cat.name}</option>`).join('');
+    }
+
+    function addCategory() {
+      const name = document.getElementById('newCatName').value.trim();
+      const minAmount = Number(document.getElementById('newCatMin').value);
+      if (!name || isNaN(minAmount) || minAmount < 0) {
+        return alert('Isi nama kategori dan nominal minimal donasi dengan benar!');
+      }
+      categories.push({ name, minAmount });
+      categories.sort((a, b) => b.minAmount - a.minAmount);
+      document.getElementById('newCatName').value = '';
+      document.getElementById('newCatMin').value = '';
+      renderCategories();
+    }
+
+    function removeCategory(idx) {
+      if (categories.length <= 1) return alert('Minimal harus ada 1 kategori!');
+      categories.splice(idx, 1);
+      renderCategories();
+    }
 
     function renderList(queue) {
       const el = document.getElementById('adminList');
@@ -76,8 +148,13 @@
       }
       el.innerHTML = queue.map((q, idx) => `
         <li class="flex justify-between items-center bg-zinc-950 border border-zinc-800 px-3 py-2 rounded-lg">
-          <span><b class="text-amber-400">#${idx + 1}</b> ${q.name} <span class="text-xs text-zinc-400">(${q.note})</span></span>
-          <button onclick="removeQueue(${idx})" class="bg-red-500 text-white text-xs px-2.5 py-1 rounded">Selesai / Hapus</button>
+          <div class="truncate pr-2">
+            <span class="text-amber-400 font-bold">#${idx + 1}</span>
+            <span class="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded mx-1 uppercase">${q.category || 'Reguler'}</span>
+            <span class="font-semibold">${q.name}</span>
+            ${q.note ? `<span class="text-xs text-zinc-400">(${q.note})</span>` : ''}
+          </div>
+          <button onclick="removeQueue(${idx})" class="bg-red-500 hover:bg-red-400 text-white text-xs px-2.5 py-1 rounded shrink-0">Selesai</button>
         </li>
       `).join('');
     }
@@ -92,25 +169,28 @@
 
     function addQueue() {
       const name = document.getElementById('pName').value.trim();
+      const category = document.getElementById('pCategory').value;
       const note = document.getElementById('pNote').value.trim();
       if (!name) return;
-      sendAction({ action: 'add', name, note });
+      sendAction({ action: 'add', name, category, note });
       document.getElementById('pName').value = '';
       document.getElementById('pNote').value = '';
     }
 
     function removeQueue(index) { sendAction({ action: 'remove', index }); }
     function clearQueue() { if (confirm('Reset semua antrian?')) sendAction({ action: 'clear' }); }
+
     function saveSettings() {
+      if (!categories.length) return alert('Tambahkan minimal 1 kategori sebelum menyimpan!');
       sendAction({
         action: 'settings',
         webhookToken: document.getElementById('setToken').value.trim(),
         settings: {
           title: document.getElementById('setTitle').value.trim(),
-          minAmount: Number(document.getElementById('setMin').value) || 0
+          categories
         }
       });
-      alert('Pengaturan tersimpan!');
+      alert('Pengaturan & Kategori tersimpan!');
     }
   </script>
 </body>
