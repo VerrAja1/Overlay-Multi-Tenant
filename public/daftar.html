@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aktivasi Lisensi Overlay</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-950 text-white min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl">
+    <h1 class="text-2xl font-bold text-amber-400 mb-1">Aktivasi Overlay By One</h1>
+    <p class="text-zinc-400 text-sm mb-6">Masukkan kode lisensi untuk membuat link overlay & admin pribadi.</p>
+
+    <form id="regForm" class="space-y-4">
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Kode Lisensi</label>
+        <input id="license" required placeholder="Contoh: VERR-VIP-2026" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-amber-400 outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Username Streamer (tanpa spasi)</label>
+        <input id="username" required placeholder="contoh: verrgaming" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-amber-400 outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Password Panel Admin</label>
+        <input id="password" type="password" required placeholder="Password rahasia lo" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-amber-400 outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Webhook Token SociaBuzz (Opsional)</label>
+        <input id="webhookToken" placeholder="Bisa diisi nanti di panel admin" class="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-amber-400 outline-none" />
+      </div>
+      <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold py-2.5 rounded-lg transition">Generate Link Sekarang</button>
+    </form>
+
+    <div id="result" class="hidden mt-6 p-4 bg-zinc-950 border border-emerald-500/40 rounded-xl space-y-2 text-xs">
+      <p class="text-emerald-400 font-bold text-sm">Berhasil! Simpan semua link ini:</p>
+      <div><span class="text-zinc-400">Link Overlay (OBS/Live Studio):</span><br><a id="linkOverlay" target="_blank" class="text-amber-400 underline break-all"></a></div>
+      <div><span class="text-zinc-400">Link Panel Admin:</span><br><a id="linkAdmin" target="_blank" class="text-amber-400 underline break-all"></a></div>
+      <div><span class="text-zinc-400">URL Webhook SociaBuzz:</span><br><code id="linkWebhook" class="text-sky-400 break-all"></code></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('regForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          license: document.getElementById('license').value.trim(),
+          username: document.getElementById('username').value.trim(),
+          password: document.getElementById('password').value,
+          webhookToken: document.getElementById('webhookToken').value.trim()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Gagal mendaftar');
+
+      const origin = window.location.origin;
+      const u = data.username;
+      document.getElementById('linkOverlay').href = `${origin}/overlay/${u}`;
+      document.getElementById('linkOverlay').textContent = `${origin}/overlay/${u}`;
+      document.getElementById('linkAdmin').href = `${origin}/admin/${u}`;
+      document.getElementById('linkAdmin').textContent = `${origin}/admin/${u}`;
+      document.getElementById('linkWebhook').textContent = `${origin}/webhook/${u}`;
+      document.getElementById('result').classList.remove('hidden');
+    });
+  </script>
+</body>
+</html>
