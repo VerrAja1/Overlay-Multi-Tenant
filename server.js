@@ -11,12 +11,10 @@ const io = new Server(server);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Gunakan folder /data jika Volume Railway terpasang, kalau tidak pakai folder lokal
 const DATA_DIR = fs.existsSync('/data') ? '/data' : __dirname;
 const DB_FILE = path.join(DATA_DIR, 'database.json');
 const MASTER_LICENSE = process.env.LICENSE_KEY || 'VERR-VIP-2026';
 
-// Inisialisasi database.json
 if (!fs.existsSync(DB_FILE)) {
     fs.writeFileSync(DB_FILE, JSON.stringify({ users: {} }, null, 2));
 }
@@ -33,7 +31,17 @@ function writeDB(data) {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
-// Routing halaman HTML
+// Helper untuk memastikan user lama tetap punya struktur categories
+function ensureCategories(user) {
+    if (!Array.isArray(user.settings.categories) || user.settings.categories.length === 0) {
+        user.settings.categories = [
+            { name: 'Reguler', minAmount: user.settings.minAmount || 10000 }
+        ];
+    }
+    // Urutkan dari nominal tertinggi ke terendah agar matching akurat
+    user.settings.categories.sort((a, b) => Number(b.minAmount) - Number(a.minAmount));
+}
+
 app.get('/', (req, res) => res.redirect('/daftar'));
 app.get('/daftar', (req, res) => res.sendFile(path.join(__dirname, 'public', 'daftar.html')));
 app.get('/overlay/:username', (req, res) => res.sendFile(path.join(__dirname, 'public', 'overlay.html')));
@@ -59,7 +67,13 @@ app.post('/api/register', (req, res) => {
         password,
         webhookToken: webhookToken || '',
         queue: [],
-        settings: { minAmount: 10000, title: 'ANTRIAN BY ONE' }
+        settings: {
+            title: 'ANTRIAN BY ONE',
+            categories: [
+                { name: 'VIP', minAmount: 25000 },
+                { name: 'Reguler', minAmount: 10000 }
+            ]
+        }
     };
     writeDB(db);
     res.json({ success: true, username: cleanUser });
@@ -71,25 +85,35 @@ app.post('/api/admin/:username/login', (req, res) => {
     const user = db.users[req.params.username.toLowerCase()];
     if (!user) return res.status(404).json({ error: 'User tidak ditemukan' });
     if (user.password !== req.body.password) return res.status(401).json({ error: 'Password salah' });
+    ensureCategories(user);
     res.json({ success: true, queue: user.queue, settings: user.settings, webhookToken: user.webhookToken });
 });
 
-// API Kelola Antrian (Tambah, Hapus, Selesai, Reset)
+// API Kelola Antrian & Pengaturan
 app.post('/api/admin/:username/queue', (req, res) => {
     const uname = req.params.username.toLowerCase();
     const db = readDB();
     const user = db.users[uname];
     if (!user || user.password !== req.body.password) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { action, name, note, index, settings, webhookToken } = req.body;
+    ensureCategories(user);
+    const { action, name, note, category, index, settings, webhookToken } = req.body;
+
     if (action === 'add' && name) {
-        user.queue.push({ name, note: note || 'VIP', time: Date.now() });
+        const defaultCat = user.settings.categories[user.settings.categories.length - 1]?.name || 'Reguler';
+        user.queue.push({
+            name,
+            category: category || defaultCat,
+            note: note || '',
+            time: Date.now()
+        });
     } else if (action === 'remove' && typeof index === 'number') {
         user.queue.splice(index, 1);
     } else if (action === 'clear') {
         user.queue = [];
     } else if (action === 'settings' && settings) {
         user.settings = { ...user.settings, ...settings };
+        ensureCategories(user);
         if (typeof webhookToken === 'string') user.webhookToken = webhookToken;
     }
 
@@ -98,7 +122,7 @@ app.post('/api/admin/:username/queue', (req, res) => {
     res.json({ success: true, queue: user.queue, settings: user.settings });
 });
 
-// Webhook SociaBuzz per Streamer
+// Webhook SociaBuzz per Streamer (Auto-detect Kategori berdasarkan nominal)
 app.post('/webhook/:username', (req, res) => {
     const uname = req.params.username.toLowerCase();
     const db = readDB();
@@ -110,26 +134,35 @@ app.post('/webhook/:username', (req, res) => {
         return res.status(403).json({ error: 'Token webhook tidak cocok' });
     }
 
+    ensureCategories(user);
     const data = req.body;
     const supporter = data.supporter || data.donator_name || data.name || 'Player';
     const amount = Number(data.amount || data.price || 0);
     const message = data.message || data.note || '';
 
-    if (amount >= (user.settings.minAmount || 0)) {
-        user.queue.push({ name: supporter, note: message || `Rp${amount.toLocaleString('id-ID')}`, time: Date.now() });
+    // Cari kategori tertinggi yang syarat minAmount-nya terpenuhi
+    const matchedCategory = user.settings.categories.find(cat => amount >= Number(cat.minAmount));
+
+    if (matchedCategory) {
+        user.queue.push({
+            name: supporter,
+            category: matchedCategory.name,
+            note: message || `Rp${amount.toLocaleString('id-ID')}`,
+            time: Date.now()
+        });
         writeDB(db);
         io.to(uname).emit('update_queue', { queue: user.queue, settings: user.settings });
     }
     res.json({ received: true });
 });
 
-// Socket.IO Room per Streamer
 io.on('connection', (socket) => {
     socket.on('join_room', (username) => {
         const uname = (username || '').toLowerCase();
         socket.join(uname);
         const db = readDB();
         if (db.users[uname]) {
+            ensureCategories(db.users[uname]);
             socket.emit('update_queue', {
                 queue: db.users[uname].queue,
                 settings: db.users[uname].settings
